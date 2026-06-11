@@ -1,0 +1,18 @@
+[package]
+name = "comp-server-ssh"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.102"
+eframe = "0.33.3"
+egui = "0.33.3"
+env_logger = "0.11.10"
+flate2 = "1.1.9"
+rfd = "0.17.2"
+russh = "0.61.2"
+serde = { version = "1.0.228", features = ["derive"] }
+ssh = "0.1.4"
+tar = "0.4.46"
+tokio = { version = "1.52.3", features = ["full"] }
+toml = "1.1.2"
