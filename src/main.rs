@@ -11,9 +11,19 @@ use std::path::{Path};
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use tar::Builder;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use anyhow::Result;
+use std::env;
 
+#[derive(Serialize, Deserialize)]
+struct Config {
+    target_ip: String,
+    project_folder: String,
+    arch: String,
+    bit:String,
+    target_os: String,
+    is_release: bool,
+}
 
 #[derive(Debug, Deserialize)]
 struct Cargoparses {
@@ -65,6 +75,8 @@ struct MyApp {
     picked: bool,
     target_location: String,
     is_release: bool,
+    saved: bool,
+    loaded: bool,
 }
 
 impl MyApp {
@@ -83,12 +95,32 @@ impl MyApp {
             picked:false,
             target_location: "/tmp/extraction".to_owned(),
             is_release: false,
+            saved: false,
+            loaded: false,
         }
     }
 }
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.loaded{
+            let exepath = std::env::current_exe().unwrap().to_string_lossy().into_owned();
+            let finalpathlocal = exepath + "/save.toml";
+            let savetoml = Path::new(&(finalpathlocal));
+            if savetoml.exists(){
+                let savecontents = std::fs::read_to_string(savetoml).expect("Failed to read config file");
+                let configurations: Config = toml::from_str(&savecontents).expect("loading the save failed");
+                self.arch = configurations.arch;
+                self.bit = configurations.bit;
+                self.ip = configurations.target_ip;
+                self.final_path = configurations.project_folder;
+                self.is_release = configurations.is_release;
+                self.os = configurations.target_os;
+                self.loaded = true;
+            }
+
+        }
+
 
 
         if let Ok(read_guard) = self.shared_log.try_read() {
@@ -154,6 +186,27 @@ impl eframe::App for MyApp {
 
             if !self.compiling && self.picked {
                 if ui.button("compile").clicked() {
+                    if !self.saved{
+                        let savefile = Config{
+                            target_ip: self.ip.clone(),
+                            arch: self.arch.clone(),
+                            project_folder: self.final_path.clone(),
+                            bit: self.bit.clone(),
+                            target_os: self.os.clone(),
+                            is_release: self.is_release.clone()
+                        };
+                        match toml::to_string(&savefile) {
+                            Ok(actual_string) => {
+                                if let Err(e) = std::fs::write("save.toml", actual_string) {
+                                } else {
+                                }
+                            }
+                            Err(e) => {
+                            }
+                        }
+
+                        self.saved = true;
+                    }
                     let host = self.ip.clone();
                     let arch = self.arch.clone();
                     let bit = self.bit.clone();
@@ -173,6 +226,7 @@ impl eframe::App for MyApp {
             }
 
             if self.compiling {
+
                 ui.label("compiling!");
 
                 egui::ScrollArea::vertical()
@@ -191,6 +245,7 @@ impl eframe::App for MyApp {
         });
     }
 }
+
 
 
 async fn actuallycomp(host: String, mut arch: String, mut bit: String, mut os: String, profold: String, target_location: String, is_release: bool,  shared_log: SharedLog, ctx: egui::Context ) -> Result<()> {
@@ -305,9 +360,6 @@ async fn actuallycomp(host: String, mut arch: String, mut bit: String, mut os: S
                 if bytes_read == 0 { break; }
                 let clean_line = raw_line.trim_end().to_string();
 
-
-                //let mut write_guard = shared_log.blocking_write();
-                //write_guard.push(clean_line);
                 {
                     let mut write_guard = shared_log.blocking_write();
                     write_guard.push(clean_line);
@@ -320,7 +372,7 @@ async fn actuallycomp(host: String, mut arch: String, mut bit: String, mut os: S
             s.send_eof().unwrap();
             s.close();
 
-            //break Ok(())
+
             }
             println!("broke out of that bit");
             let mut executbale: Vec<u8> = vec![];
@@ -382,7 +434,7 @@ select folder -- done
 copy over to server in a temporary placement -- done
 copy finished file back -- done
 show output -- done
-make a saving (using json?) -- not done
+make a saving (using json?, no toml) -- not done
 make sure that server has propper compiler -- not done
 make progress bar -- not done - probably won't do
 make it not just ubuntu/debian compatible -- not done
