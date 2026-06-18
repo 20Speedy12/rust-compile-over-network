@@ -22,8 +22,6 @@ struct Cargoparses {
 #[derive(Debug, Deserialize)]
 struct Packageparses {
     name: String,
-    version: String,
-    edition: String
 }
 
 
@@ -65,7 +63,8 @@ struct MyApp {
     picked_path: Option<String>,
     final_path: String,
     picked: bool,
-    target_location: String
+    target_location: String,
+    is_release: bool,
 }
 
 impl MyApp {
@@ -82,7 +81,8 @@ impl MyApp {
             picked_path: Some("".to_owned()),
             final_path: "".to_owned(),
             picked:false,
-            target_location: "/tmp/extraction".to_owned()
+            target_location: "/tmp/extraction".to_owned(),
+            is_release: false,
         }
     }
 }
@@ -117,13 +117,17 @@ impl eframe::App for MyApp {
                 if ui.button("Linux").clicked() { self.os = "unknown-linux-gnu".to_string(); }
             });
             ui.horizontal(|ui| {
+                if ui.button("Debug build").clicked() { self.is_release = false; }
+                if ui.button("Release build").clicked() { self.is_release = true; }
+            });
+            ui.horizontal(|ui| {
                 let name_label = ui.label("Where to save to on target machine: ");
                 ui.text_edit_singleline(&mut self.target_location)
                     .labelled_by(name_label.id);
             });
 
-            ui.label(format!("machine {}, architecture {}, {} bit, target os {}", self.ip, self.arch, self.bit, self.os));
-            //here
+            ui.label(format!("machine {}, architecture {}, {} bit, target os {}, is release build, {}", self.ip, self.arch, self.bit, self.os, self.is_release));
+
             if ui.button("project folder…").clicked()
                 && let Some(path) = rfd::FileDialog::new().pick_folder()
             {
@@ -147,7 +151,7 @@ impl eframe::App for MyApp {
                     ui.monospace(picked_path);
                 });
             }
-            // to here
+
             if !self.compiling && self.picked {
                 if ui.button("compile").clicked() {
                     let host = self.ip.clone();
@@ -155,12 +159,13 @@ impl eframe::App for MyApp {
                     let bit = self.bit.clone();
                     let os = self.os.clone();
                     let path = self.final_path.clone();
+                    let is_release = self.is_release.clone();
                     let task_log = Arc::clone(&self.shared_log);
                     let ctx_clone = ctx.clone();
                     let target_location = self.target_location.clone();
 
                     tokio::spawn(async move {
-                        let _ = actuallycomp(host, arch, bit, os, path, target_location, task_log, ctx_clone).await;
+                        let _ = actuallycomp(host, arch, bit, os, path, target_location, is_release, task_log, ctx_clone).await;
                     });
 
                     self.compiling = true;
@@ -188,14 +193,21 @@ impl eframe::App for MyApp {
 }
 
 
-async fn actuallycomp(host: String, mut arch: String, mut bit: String, mut os: String, profold: String, target_location: String,  shared_log: SharedLog, ctx: egui::Context ) -> Result<()> {
+async fn actuallycomp(host: String, mut arch: String, mut bit: String, mut os: String, profold: String, target_location: String, is_release: bool,  shared_log: SharedLog, ctx: egui::Context ) -> Result<()> {
     let profoldclone = profold.clone() + "/Cargo.toml";
     let cargotomlpath = Path::new(&profoldclone);
     let tomlcontents = fs::read_to_string(cargotomlpath).await?;
     let tomlconfig: Cargoparses = toml::from_str(&tomlcontents)?;
     let projname = tomlconfig.package.name;
-
-
+    let releaseflag;
+    let is_release_folder;
+    if is_release{
+        releaseflag = "--release";
+        is_release_folder = "/release/";
+    }else{
+        releaseflag = "";
+        is_release_folder = "/debug/";
+    }
 
     let host1 = host.to_owned();
     if arch == "x86_".to_owned() && bit == "32-".to_owned(){
@@ -208,9 +220,9 @@ async fn actuallycomp(host: String, mut arch: String, mut bit: String, mut os: S
     if arch == "aarch".to_owned() && os == "unknown-linux-gnu".to_owned(){
         os = "unknown-linux-gnu".to_owned()
     }
-    let exepath = target_location.clone() + "/target/" + &arch + &bit + &os + "/debug/" + &projname;
+    let exepath = target_location.clone() + "/target/" + &arch + &bit + &os + &is_release_folder + &projname;
     println!("{}", exepath);
-    let comman = "mkdir -pv ".to_owned() + &target_location + " && cd " + &target_location + " && tar -xvf /tmp/extraction/gobstap.tar.gz -C " + &target_location + " && rm /tmp/extraction/gobstap.tar.gz && $HOME/.cargo/bin/cargo build --target " + &arch + &bit + &os;
+    let comman = "mkdir -pv ".to_owned() + &target_location + " && cd " + &target_location + " && tar -xvf /tmp/extraction/gobstap.tar.gz -C " + &target_location + " && rm /tmp/extraction/gobstap.tar.gz && $HOME/.cargo/bin/cargo build " + &releaseflag + " --target " + &arch + &bit + &os;
 
     let tar_gz = File::create("/tmp/gobstap.tar.gz")?;
     let enc = GzEncoder::new(tar_gz, Compression::none());
@@ -375,5 +387,5 @@ make sure that server has propper compiler -- not done
 make progress bar -- not done - probably won't do
 make it not just ubuntu/debian compatible -- not done
 make it use the same folder so it doesn't spend insanely long amounts of time compiling -- done
-add the --release flag -- not done
+add the --release flag -- done
 */
